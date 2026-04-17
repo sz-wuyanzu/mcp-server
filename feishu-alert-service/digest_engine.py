@@ -190,11 +190,11 @@ class ChatWorker:
         if not segment_due:
             return
 
+        self._last_segment_time = now  # Set BEFORE processing to maintain cadence
         try:
             self._process_segment()
         except Exception:
             logger.error("[%s] 分段摘要异常", self.label, exc_info=True)
-        self._last_segment_time = time.time()
         self._segment_count += 1
 
         # --- Report (every N segments) ---
