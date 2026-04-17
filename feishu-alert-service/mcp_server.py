@@ -101,6 +101,10 @@ def _setup_logging() -> None:
         return  # Already configured
     root.setLevel(logging.INFO)
 
+    # Suppress noisy third-party loggers
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
     # Handler 1: stderr (shows in docker logs)
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))

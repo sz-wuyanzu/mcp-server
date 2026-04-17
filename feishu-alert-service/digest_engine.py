@@ -191,11 +191,15 @@ class ChatWorker:
             return
 
         self._last_segment_time = now  # Set BEFORE processing to maintain cadence
+        has_new_data = False
         try:
-            self._process_segment()
+            has_new_data = self._process_segment()
         except Exception:
             logger.error("[%s] 分段摘要异常", self.label, exc_info=True)
-        self._segment_count += 1
+
+        # Only count segments that produced new summaries
+        if has_new_data:
+            self._segment_count += 1
 
         # --- Report (every N segments) ---
         if self._segment_count >= self.cfg.report_cycle:
@@ -209,7 +213,8 @@ class ChatWorker:
 
     # ---- Segment logic ----
 
-    def _process_segment(self) -> None:
+    def _process_segment(self) -> bool:
+        """Fetch and summarize recent messages. Returns True if new summary was written."""
         last_ts = self._storage.read_last_ts(self.cfg.chat_id)
 
         # Guard: if last_ts is corrupt, reset it
@@ -236,7 +241,7 @@ class ChatWorker:
 
         if not lines:
             logger.debug("[%s] 本轮无新消息", self.label)
-            return
+            return False
 
         raw_text = "\n".join(lines)
         logger.info("[%s] 拉取 %d 条消息 (%d 字符), 开始摘要", self.label, len(lines), len(raw_text))
@@ -244,11 +249,12 @@ class ChatWorker:
         summary = self._llm.summarize(raw_text, self._segment_prompt)
         if not summary:
             logger.warning("[%s] LLM 摘要返回空, 跳过本轮", self.label)
-            return
+            return False
 
         ts_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         self._storage.append_digest(self.cfg.chat_id, f"\n## {ts_str}\n{summary}\n")
         logger.info("[%s] 分段摘要完成: %d 条消息 -> %d 字符", self.label, len(lines), len(summary))
+        return True
 
     # ---- Report logic ----
 

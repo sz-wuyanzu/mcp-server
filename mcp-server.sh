@@ -80,7 +80,17 @@ _stop_one() {
 
     pid=$(cat "$pf")
     kill "$pid"
-    echo "[$svc] 已停止 (PID: $pid)"
+    # Wait up to 5 seconds for process to exit
+    for i in 1 2 3 4 5; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 1
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null
+        echo "[$svc] 强制停止 (PID: $pid)"
+    else
+        echo "[$svc] 已停止 (PID: $pid)"
+    fi
     rm -f "$pf"
 }
 

@@ -47,6 +47,10 @@ def _setup_logging() -> None:
         return  # Already configured (e.g. imported by mcp_server.py)
     root.setLevel(logging.INFO)
 
+    # Suppress noisy third-party loggers
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
     console = logging.StreamHandler(sys.stderr)
     console.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
     root.addHandler(console)
