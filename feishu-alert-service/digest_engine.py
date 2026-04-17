@@ -220,13 +220,10 @@ class ChatWorker:
                 logger.warning("[%s] last_ts 格式异常 (%s), 重置", self.label, last_ts)
                 last_ts = None
 
-        # Reset if too old or missing — only fetch recent window
-        now_ms = int(time.time() * 1000)
-        max_age_ms = self.cfg.segment_interval * 60 * 1000 * 3
-        if not last_ts or (now_ms - int(last_ts)) > max_age_ms:
-            fresh_ts = str(now_ms - self.cfg.segment_interval * 60 * 1000)
-            logger.info("[%s] 重置 last_ts 到最近时间窗口", self.label)
-            last_ts = fresh_ts
+        # First run only: initialize last_ts to recent window
+        if not last_ts:
+            last_ts = str(int(time.time() * 1000) - self.cfg.segment_interval * 60 * 1000)
+            logger.info("[%s] 初始化 last_ts (首次启动)", self.label)
             self._storage.write_last_ts(self.cfg.chat_id, last_ts)
 
         lines, new_ts = self._feishu.fetch_messages(
@@ -236,9 +233,6 @@ class ChatWorker:
         )
         if new_ts and new_ts != last_ts:
             self._storage.write_last_ts(self.cfg.chat_id, new_ts)
-        elif not lines:
-            # No new messages — advance last_ts to now to prevent repeated resets
-            self._storage.write_last_ts(self.cfg.chat_id, str(int(time.time() * 1000)))
 
         if not lines:
             logger.debug("[%s] 本轮无新消息", self.label)
