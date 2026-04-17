@@ -275,7 +275,7 @@ def main() -> None:
 
     # --- Run ---
     tick = min(w.cfg.segment_interval for w in workers if w.cfg.enabled) * 60 if any(w.cfg.enabled for w in workers) else 60
-    engine = DigestEngine(workers, tick_interval=tick)
+    engine = DigestEngine(workers)
 
     try:
         engine.run_forever(stop_check=lambda: not running)

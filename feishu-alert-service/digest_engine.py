@@ -14,6 +14,7 @@ Storage layout (data_dir/):
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -67,8 +68,14 @@ class ChatConfig:
     def __post_init__(self) -> None:
         if self.segment_interval < 1:
             object.__setattr__(self, "segment_interval", 1)
+        if self.segment_interval > 1440:  # max 24 hours
+            logger.warning("segment_interval=%d 过大, 限制为 1440 分钟", self.segment_interval)
+            object.__setattr__(self, "segment_interval", 1440)
         if self.report_cycle < 1:
             object.__setattr__(self, "report_cycle", 1)
+        if self.report_cycle > 100:
+            logger.warning("report_cycle=%d 过大, 限制为 100", self.report_cycle)
+            object.__setattr__(self, "report_cycle", 100)
 
 
 class Storage:
@@ -179,8 +186,8 @@ class ChatWorker:
         """Actual report interval in minutes (for display)."""
         return self.cfg.segment_interval * self.cfg.report_cycle
 
-    def tick(self) -> None:
-        """Called every engine tick. Skipped if disabled."""
+    def tick(self, llm_semaphore: Optional[threading.Semaphore] = None) -> None:
+        """Called every interval. Skipped if disabled."""
         if not self.cfg.enabled:
             return
         now = time.time()
@@ -193,7 +200,7 @@ class ChatWorker:
         self._last_segment_time = now  # Set BEFORE processing to maintain cadence
         has_new_data = False
         try:
-            has_new_data = self._process_segment()
+            has_new_data = self._process_segment(llm_semaphore)
         except Exception:
             logger.error("[%s] 分段摘要异常", self.label, exc_info=True)
 
@@ -204,16 +211,15 @@ class ChatWorker:
         # --- Report (every N segments) ---
         if self._segment_count >= self.cfg.report_cycle:
             try:
-                sent = self._send_report()
+                sent = self._send_report(llm_semaphore)
                 if sent:
                     self._segment_count = 0  # Reset only on success
-                # On failure, keep counting — will retry next segment
             except Exception:
                 logger.error("[%s] 归总报告异常", self.label, exc_info=True)
 
     # ---- Segment logic ----
 
-    def _process_segment(self) -> bool:
+    def _process_segment(self, llm_semaphore: Optional[threading.Semaphore] = None) -> bool:
         """Fetch and summarize recent messages. Returns True if new summary was written."""
         last_ts = self._storage.read_last_ts(self.cfg.chat_id)
 
@@ -246,7 +252,13 @@ class ChatWorker:
         raw_text = "\n".join(lines)
         logger.info("[%s] 拉取 %d 条消息 (%d 字符), 开始摘要", self.label, len(lines), len(raw_text))
 
-        summary = self._llm.summarize(raw_text, self._segment_prompt)
+        if llm_semaphore:
+            llm_semaphore.acquire()
+        try:
+            summary = self._llm.summarize(raw_text, self._segment_prompt)
+        finally:
+            if llm_semaphore:
+                llm_semaphore.release()
         if not summary:
             logger.warning("[%s] LLM 摘要返回空, 跳过本轮", self.label)
             return False
@@ -258,7 +270,7 @@ class ChatWorker:
 
     # ---- Report logic ----
 
-    def _send_report(self) -> bool:
+    def _send_report(self, llm_semaphore: Optional[threading.Semaphore] = None) -> bool:
         """Generate and send the aggregated report. Returns True on success."""
         digest_text = self._storage.read_digest(self.cfg.chat_id)
         if not digest_text:
@@ -272,7 +284,14 @@ class ChatWorker:
             logger.info("[%s] 截断摘要: %d -> 1500 字符", self.label, original_len)
 
         logger.info("[%s] 开始生成归总报告...", self.label)
-        report = self._llm.summarize(digest_text, self._report_prompt)
+
+        if llm_semaphore:
+            llm_semaphore.acquire()
+        try:
+            report = self._llm.summarize(digest_text, self._report_prompt)
+        finally:
+            if llm_semaphore:
+                llm_semaphore.release()
 
         if not report:
             logger.warning("[%s] 归总 LLM 返回空, 保留摘要待下次重试", self.label)
@@ -303,22 +322,30 @@ class ChatWorker:
 
 
 # ---------------------------------------------------------------------------
-# DigestEngine (scheduler)
+# DigestEngine (scheduler — one thread per worker)
 # ---------------------------------------------------------------------------
 
 class DigestEngine:
-    """Runs all ChatWorkers in a synchronous loop with graceful shutdown."""
+    """Runs each ChatWorker in its own thread with independent timing.
 
-    def __init__(self, workers: List[ChatWorker], tick_interval: int = 60) -> None:
+    Workers share a semaphore to limit concurrent LLM calls.
+    """
+
+    def __init__(
+        self,
+        workers: List[ChatWorker],
+        max_concurrent_llm: int = 3,
+    ) -> None:
         self._workers = workers
-        self._tick_interval = max(tick_interval, 10)
+        self._llm_semaphore = threading.Semaphore(max_concurrent_llm)
+        self._threads: List[threading.Thread] = []
 
     def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
-        """Block and run the digest loop until *stop_check* returns True."""
+        """Start all worker threads and block until stop_check returns True."""
         active = [w for w in self._workers if w.enabled]
         logger.info(
-            "Digest 引擎启动: %d 个群 (%d 个启用), tick=%ds",
-            len(self._workers), len(active), self._tick_interval,
+            "Digest 引擎启动: %d 个群 (%d 个启用), 并发上限=%d",
+            len(self._workers), len(active), self._llm_semaphore._value,
         )
         for w in self._workers:
             status = "启用" if w.enabled else "禁用"
@@ -328,29 +355,57 @@ class DigestEngine:
                 w.report_interval_minutes, status,
             )
 
+        # Start one thread per enabled worker
+        for worker in self._workers:
+            if not worker.enabled:
+                continue
+            t = threading.Thread(
+                target=self._worker_loop,
+                args=(worker, stop_check),
+                name=f"worker-{worker.cfg.chat_id[-8:]}",
+                daemon=True,
+            )
+            t.start()
+            self._threads.append(t)
+
+        # Block main thread until stop signal
         while True:
             if stop_check and stop_check():
                 logger.info("Digest 引擎停止 (收到退出信号)")
                 break
+            time.sleep(1)
+
+        # Wait for threads to finish (they check stop_check too)
+        for t in self._threads:
+            t.join(timeout=5)
+
+    def _worker_loop(
+        self,
+        worker: ChatWorker,
+        stop_check: Optional[Callable[[], bool]],
+    ) -> None:
+        """Run a single worker's tick loop in its own thread."""
+        interval = worker.cfg.segment_interval * 60
+        logger.info("[%s] Worker 线程启动 (interval=%ds)", worker.label, interval)
+
+        while True:
+            if stop_check and stop_check():
+                break
 
             tick_start = time.monotonic()
-            for worker in self._workers:
-                try:
-                    worker.tick()
-                except Exception:
-                    logger.error("[%s] Worker tick 异常", worker.label, exc_info=True)
+            try:
+                worker.tick(self._llm_semaphore)
+            except Exception:
+                logger.error("[%s] Worker tick 异常", worker.label, exc_info=True)
             tick_elapsed = time.monotonic() - tick_start
 
-            remaining = max(0, self._tick_interval - tick_elapsed)
-            if tick_elapsed > self._tick_interval:
-                logger.warning(
-                    "Tick 耗时 %.1fs 超过间隔 %ds, 跳过等待",
-                    tick_elapsed, self._tick_interval,
-                )
-
+            # Sleep remaining time, check stop every second
+            remaining = max(0, interval - tick_elapsed)
             slept = 0.0
             while slept < remaining:
                 if stop_check and stop_check():
                     break
                 time.sleep(min(1.0, remaining - slept))
                 slept += 1.0
+
+        logger.info("[%s] Worker 线程退出", worker.label)

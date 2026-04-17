@@ -293,7 +293,7 @@ def _init_all(config_path: str) -> None:
     # --- Start digest engine in background thread ---
     if workers and any(w.cfg.enabled for w in workers):
         tick = min(w.cfg.segment_interval for w in workers if w.cfg.enabled) * 60
-        engine = DigestEngine(workers, tick_interval=tick)
+        engine = DigestEngine(workers)
 
         def _run_digest_forever():
             """Run digest engine with auto-restart on crash."""
