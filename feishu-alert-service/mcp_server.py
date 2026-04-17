@@ -89,19 +89,35 @@ _LOG_FORMAT = f"%(asctime)s %(levelname)-7s [{_LOG_PREFIX}] [%(name)s] %(message
 _LOG_DATE_FMT = "%Y-%m-%d %H:%M:%S"
 
 def _setup_logging() -> None:
-    """Configure root logger to output to stderr (container console)."""
+    """Configure root logger to output to stderr + log file."""
+    log_dir = _SELF_DIR / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        log_dir = None
+
     root = logging.getLogger()
     if root.handlers:
-        return  # Already configured
+        return
     root.setLevel(logging.INFO)
 
-    # Suppress noisy third-party loggers
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
     root.addHandler(stderr_handler)
+
+    if log_dir:
+        from logging.handlers import RotatingFileHandler
+        file_handler = RotatingFileHandler(
+            log_dir / "service.log",
+            maxBytes=10 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
+        root.addHandler(file_handler)
 
 _setup_logging()
 logger = logging.getLogger("main")
