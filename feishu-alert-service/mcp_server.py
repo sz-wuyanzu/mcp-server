@@ -89,13 +89,7 @@ _LOG_FORMAT = f"%(asctime)s %(levelname)-7s [{_LOG_PREFIX}] [%(name)s] %(message
 _LOG_DATE_FMT = "%Y-%m-%d %H:%M:%S"
 
 def _setup_logging() -> None:
-    """Configure root logger to output to both stderr and a log file."""
-    log_dir = _SELF_DIR / "logs"
-    try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        log_dir = None
-
+    """Configure root logger to output to stderr (container console)."""
     root = logging.getLogger()
     if root.handlers:
         return  # Already configured
@@ -105,22 +99,9 @@ def _setup_logging() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-    # Handler 1: stderr (shows in docker logs)
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
     root.addHandler(stderr_handler)
-
-    # Handler 2: file (persistent)
-    if log_dir:
-        from logging.handlers import RotatingFileHandler
-        file_handler = RotatingFileHandler(
-            log_dir / "service.log",
-            maxBytes=10 * 1024 * 1024,  # 10MB
-            backupCount=3,
-            encoding="utf-8",
-        )
-        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
-        root.addHandler(file_handler)
 
 _setup_logging()
 logger = logging.getLogger("main")

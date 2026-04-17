@@ -35,13 +35,6 @@ _LOG_FORMAT = f"%(asctime)s %(levelname)-7s [{_LOG_PREFIX}] [%(name)s] %(message
 _LOG_DATE_FMT = "%Y-%m-%d %H:%M:%S"
 
 def _setup_logging() -> None:
-    _self_dir = Path(__file__).resolve().parent
-    log_dir = _self_dir / "logs"
-    try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        log_dir = None
-
     root = logging.getLogger()
     if root.handlers:
         return  # Already configured (e.g. imported by mcp_server.py)
@@ -54,17 +47,6 @@ def _setup_logging() -> None:
     console = logging.StreamHandler(sys.stderr)
     console.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
     root.addHandler(console)
-
-    if log_dir:
-        from logging.handlers import RotatingFileHandler
-        fh = RotatingFileHandler(
-            log_dir / "service.log",
-            maxBytes=10 * 1024 * 1024,
-            backupCount=3,
-            encoding="utf-8",
-        )
-        fh.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
-        root.addHandler(fh)
 
 _setup_logging()
 logger = logging.getLogger("main")

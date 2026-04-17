@@ -63,7 +63,7 @@ _start_one() {
     fi
 
     mkdir -p "$svc_dir/data" "$svc_dir/logs"
-    nohup "$PYTHON" "$svc_dir/main.py" "$svc_dir/config.yaml" >/dev/null 2>&1 &
+    nohup "$PYTHON" "$svc_dir/main.py" "$svc_dir/config.yaml" >/dev/null &
     echo "$!" > "$pf"
     echo "[$svc] 已启动 (PID: $!)"
 }
