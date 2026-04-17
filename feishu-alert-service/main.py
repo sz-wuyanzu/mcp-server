@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Feishu Alert Service — standalone alert digest + MCP server."""
+"""Feishu Alert Service — standalone alert digest service.
+
+Entry point for the digest engine. Feishu credentials and LLM config
+are read from the Hermes installation (~/.hermes).
+
+Usage:
+    python main.py [config.yaml]
+"""
 
 from __future__ import annotations
 
@@ -13,81 +20,122 @@ import yaml
 
 from feishu_client import FeishuClient
 from llm_client import LLMClient
-from digest_engine import ChatConfig, ChatWorker, DigestEngine, _Storage
+from hermes_config import HermesConfigError, load_feishu_credentials, load_llm_config
+from digest_engine import ChatConfig, ChatWorker, DigestEngine, Storage
 from digest_engine import SEGMENT_PROMPT, REPORT_PROMPT
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+LOG_FORMAT = "%(asctime)s %(levelname)-7s [%(name)s] %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
 logger = logging.getLogger("feishu-alert-service")
 
 
-def load_config(path: str = "config.yaml") -> Dict[str, Any]:
+# ---------------------------------------------------------------------------
+# Config loading
+# ---------------------------------------------------------------------------
+
+def load_config(path: str) -> Dict[str, Any]:
+    """Load and validate the service config file."""
     p = Path(path)
     if not p.exists():
-        logger.error("Config file not found: %s", path)
-        sys.exit(1)
-    with open(p, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
-def main() -> None:
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
-    cfg = load_config(config_path)
-
-    # Feishu client
-    feishu_cfg = cfg.get("feishu", {})
-    app_id = feishu_cfg.get("app_id", "")
-    app_secret = feishu_cfg.get("app_secret", "")
-    if not app_id or not app_secret:
-        logger.error("feishu.app_id and feishu.app_secret are required")
+        logger.error("配置文件不存在: %s", p.resolve())
+        logger.error("请编辑 config.yaml 填入群 chat_id 后再启动。")
         sys.exit(1)
 
-    domain = feishu_cfg.get("domain", "feishu")
-    feishu = FeishuClient(app_id, app_secret, domain)
-    logger.info("Feishu client initialized (domain=%s)", domain)
-
-    # LLM client
-    llm_cfg = cfg.get("llm", {})
-    llm = LLMClient(
-        base_url=llm_cfg.get("base_url", ""),
-        api_key=llm_cfg.get("api_key", ""),
-        model=llm_cfg.get("model", ""),
-    )
-    logger.info("LLM client initialized (model=%s)", llm_cfg.get("model"))
-
-    # Storage
-    data_dir = Path(cfg.get("data_dir", "./data"))
-    storage = _Storage(data_dir)
-
-    # Prompts
-    segment_prompt = cfg.get("segment_prompt", "").strip() or SEGMENT_PROMPT
-    report_prompt = cfg.get("report_prompt", "").strip() or REPORT_PROMPT
-
-    # Build workers
-    defaults = cfg.get("defaults", {})
-    chats_cfg = cfg.get("chats", [])
-    if not chats_cfg:
-        logger.error("No chats configured")
+    try:
+        with open(p, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+    except yaml.YAMLError as exc:
+        logger.error("配置文件 YAML 语法错误: %s\n%s", path, exc)
+        sys.exit(1)
+    except OSError as exc:
+        logger.error("读取配置文件失败: %s — %s", path, exc)
         sys.exit(1)
 
-    workers = []
-    chat_map = {}
-    for entry in chats_cfg:
+    if not isinstance(cfg, dict):
+        logger.error("配置文件格式错误: 顶层必须是字典，当前为 %s", type(cfg).__name__)
+        sys.exit(1)
+
+    # Validate chats
+    chats = cfg.get("chats")
+    if not chats or not isinstance(chats, list):
+        logger.error("配置错误: 缺少 'chats' 列表。请在 config.yaml 中添加至少一个群配置。")
+        logger.error("示例:")
+        logger.error("  chats:")
+        logger.error('    - chat_id: "oc_xxx"')
+        logger.error('      name: "生产告警群"')
+        sys.exit(1)
+
+    # Check for placeholder chat_id
+    valid_chats = []
+    for i, entry in enumerate(chats):
         if not isinstance(entry, dict):
+            logger.warning("chats[%d] 不是字典格式，已跳过", i)
             continue
-        chat_id = str(entry.get("chat_id", "")).strip()
-        if not chat_id:
+        cid = str(entry.get("chat_id", "")).strip()
+        if not cid:
+            logger.warning("chats[%d] 缺少 chat_id，已跳过", i)
             continue
+        if cid.startswith("oc_xxx") or cid.startswith("oc_yyy"):
+            logger.error(
+                "chats[%d] 的 chat_id 还是示例值 (%s)，请替换为真实的群 ID。\n"
+                "获取方式: 飞书群设置 → 群信息 → 群号",
+                i, cid,
+            )
+            sys.exit(1)
+        valid_chats.append(entry)
+
+    if not valid_chats:
+        logger.error("没有有效的群配置。请检查 config.yaml 中的 chats 列表。")
+        sys.exit(1)
+
+    cfg["chats"] = valid_chats
+    return cfg
+
+
+# ---------------------------------------------------------------------------
+# Worker builder
+# ---------------------------------------------------------------------------
+
+def build_workers(
+    cfg: Dict[str, Any],
+    feishu: FeishuClient,
+    llm: LLMClient,
+    storage: Storage,
+) -> list[ChatWorker]:
+    """Build ChatWorker instances from validated config."""
+    defaults = cfg.get("defaults", {})
+    if not isinstance(defaults, dict):
+        defaults = {}
+
+    segment_prompt = (cfg.get("segment_prompt") or "").strip() or SEGMENT_PROMPT
+    report_prompt = (cfg.get("report_prompt") or "").strip() or REPORT_PROMPT
+
+    workers: list[ChatWorker] = []
+    for idx, entry in enumerate(cfg["chats"]):
+        chat_id = str(entry["chat_id"]).strip()
         name = str(entry.get("name", "")).strip()
+
+        def _int(key: str, fallback: int) -> int:
+            val = entry.get(key, defaults.get(key, fallback))
+            try:
+                return max(1, int(val))
+            except (ValueError, TypeError):
+                logger.warning("chats[%d].%s 值无效 (%s), 使用默认值 %d", idx, key, val, fallback)
+                return fallback
+
         chat_config = ChatConfig(
             chat_id=chat_id,
             name=name,
-            segment_interval=int(entry.get("segment_interval", defaults.get("segment_interval", 10))),
-            report_interval=int(entry.get("report_interval", defaults.get("report_interval", 240))),
-            max_chars_per_fetch=int(entry.get("max_chars_per_fetch", defaults.get("max_chars_per_fetch", 30000))),
+            enabled=bool(entry.get("enabled", defaults.get("enabled", True))),
+            segment_interval=_int("segment_interval", 10),
+            report_interval=_int("report_interval", 240),
+            max_chars_per_fetch=_int("max_chars_per_fetch", 30000),
         )
         workers.append(ChatWorker(
             cfg=chat_config,
@@ -97,29 +145,102 @@ def main() -> None:
             segment_prompt=segment_prompt,
             report_prompt=report_prompt,
         ))
-        chat_map[chat_id] = name or chat_id
 
-    logger.info("Configured %d chat(s): %s", len(workers), ", ".join(w.label for w in workers))
+    return workers
 
-    # MCP server (optional)
-    mcp_cfg = cfg.get("mcp", {})
-    if mcp_cfg.get("enabled", False):
-        from mcp_server import set_feishu_client, start_mcp_server
-        set_feishu_client(feishu, chat_map)
-        start_mcp_server(port=mcp_cfg.get("port", 8765))
 
-    # Graceful shutdown
-    def _shutdown(sig, frame):
-        logger.info("Shutting down...")
-        sys.exit(0)
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
+    logger.info("=" * 60)
+    logger.info("Feishu Alert Service 启动中...")
+    logger.info("配置文件: %s", Path(config_path).resolve())
+    logger.info("=" * 60)
+
+    cfg = load_config(config_path)
+    hermes_home = cfg.get("hermes_home")
+
+    # --- Feishu credentials (from Hermes) ---
+    try:
+        creds = load_feishu_credentials(hermes_home)
+    except HermesConfigError as exc:
+        logger.error("Hermes 飞书配置错误: %s", exc)
+        sys.exit(1)
+
+    try:
+        feishu = FeishuClient(creds.app_id, creds.app_secret, creds.domain)
+    except Exception as exc:
+        logger.error("FeishuClient 初始化失败: %s", exc)
+        sys.exit(1)
+
+    # --- LLM config (from Hermes, optional model override) ---
+    model_override = cfg.get("model")
+    try:
+        llm_cfg = load_llm_config(
+            hermes_home,
+            model_override if isinstance(model_override, str) else None,
+        )
+    except HermesConfigError as exc:
+        logger.error("Hermes LLM 配置错误: %s", exc)
+        sys.exit(1)
+
+    llm = LLMClient(base_url=llm_cfg.base_url, api_key=llm_cfg.api_key, model=llm_cfg.model)
+
+    # Verify model is reachable
+    try:
+        llm.verify_model()
+    except RuntimeError as exc:
+        logger.error("模型验证失败: %s", exc)
+        sys.exit(1)
+
+    # --- Storage ---
+    data_dir = Path(cfg.get("data_dir", "./data"))
+    try:
+        storage = Storage(data_dir)
+    except OSError:
+        sys.exit(1)  # Storage.__init__ already logged the error
+
+    # --- Workers ---
+    workers = build_workers(cfg, feishu, llm, storage)
+
+    # Verify all chat_ids are accessible (non-blocking)
+    logger.info("验证群配置...")
+    for w in workers:
+        try:
+            real_name = feishu.verify_chat(w.cfg.chat_id)
+            if not w.cfg.name:
+                logger.info("  群 %s 未设置 name，使用飞书群名: %s", w.cfg.chat_id, real_name)
+        except RuntimeError as exc:
+            logger.warning("群验证失败 (不影响启动): %s", exc)
+            logger.warning("  [%s] 将在运行时重试，验证通过前不会拉取消息", w.label)
+
+    logger.info("已配置 %d 个群: %s", len(workers), ", ".join(w.label for w in workers))
+
+    # --- Graceful shutdown ---
+    running = True
+
+    def _shutdown(sig: int, _frame: Any) -> None:
+        nonlocal running
+        sig_name = signal.Signals(sig).name if hasattr(signal, "Signals") else str(sig)
+        logger.info("收到信号 %s, 准备退出...", sig_name)
+        running = False
 
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    # Run digest engine
-    tick = min(w.cfg.segment_interval for w in workers) * 60
+    # --- Run ---
+    tick = min(w.cfg.segment_interval for w in workers if w.cfg.enabled) * 60 if any(w.cfg.enabled for w in workers) else 60
     engine = DigestEngine(workers, tick_interval=tick)
-    engine.run_forever()
+
+    try:
+        engine.run_forever(stop_check=lambda: not running)
+    except KeyboardInterrupt:
+        pass
+
+    logger.info("Feishu Alert Service 已停止")
 
 
 if __name__ == "__main__":
