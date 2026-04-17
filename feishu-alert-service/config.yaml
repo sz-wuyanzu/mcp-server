@@ -14,6 +14,7 @@
 # 默认读取环境变量 HERMES_HOME，不设则用 ~/.hermes
 # Docker 部署时通过 compose 的 environment 设置，一般不需要在这里改
 # hermes_home: "/hermes-data"
+hermes_home: "/opt/data"
 
 # 使用的模型名称（不填 = 跟 Hermes 主模型一致）
 # 如果想用更便宜/更快的模型来跑摘要，在这里指定即可，

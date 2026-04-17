@@ -31,14 +31,14 @@ git clone https://github.com/sz-wuyanzu/mcp-server.git
 ```yaml
 mcp_servers:
   feishu-alert:
-    command: "python3"
+    command: "/opt/hermes/.venv/bin/python"
     args:
       - "/opt/data/mcp-server/feishu-alert-service/mcp_server.py"
       - "/opt/data/mcp-server/feishu-alert-service/config.yaml"
 ```
 
-> 如果启动报 `ModuleNotFoundError`，说明 `python3` 不是 Hermes venv 的 python，
-> 把 `command` 改成 `"/opt/hermes/.venv/bin/python"`
+> 注意：必须用 Hermes venv 的 python（`/opt/hermes/.venv/bin/python`），
+> 系统的 `python3` 没有装依赖，会报 `ModuleNotFoundError`。
 
 ### 4. 重启 Hermes
 
