@@ -48,9 +48,9 @@ def _ensure_dependencies() -> None:
 
     print(f"[feishu-alert] 首次运行，自动安装依赖: {missing}", file=sys.stderr)
     import subprocess
-    # Try uv first (Hermes container), fall back to pip
+    # Try uv first (installs to current venv), fall back to pip with current interpreter
     for cmd in [
-        ["uv", "pip", "install", "-r", str(req_file)],
+        ["uv", "pip", "install", "--python", sys.executable, "-r", str(req_file)],
         [sys.executable, "-m", "pip", "install", "-r", str(req_file)],
     ]:
         try:

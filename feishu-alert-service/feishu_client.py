@@ -153,7 +153,7 @@ class FeishuClient:
                 .sort_type("ByCreateTimeAsc")
             )
             if is_first_page and since_ts:
-                start_sec = str(int(int(since_ts) / 1000) + 1)
+                start_sec = str(int(since_ts) // 1000 + 1)
                 builder = builder.start_time(start_sec)
             if page_token:
                 builder = builder.page_token(page_token)

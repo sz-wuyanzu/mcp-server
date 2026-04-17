@@ -47,7 +47,8 @@ mcp_servers:
       - "/opt/data/mcp-server/feishu-alert-service/config.yaml"
 ```
 
-> 如果 `python3` 找不到依赖，改成 `/opt/hermes/.venv/bin/python`
+> 如果启动报 `ModuleNotFoundError`，说明 `python3` 不是 Hermes venv 的 python，
+> 把 `command` 改成 `"/opt/hermes/.venv/bin/python"`
 
 ### 4. 重启 Hermes
 
