@@ -244,6 +244,9 @@ class ChatWorker:
         )
         if new_ts and new_ts != last_ts:
             self._storage.write_last_ts(self.cfg.chat_id, new_ts)
+        elif not lines:
+            # No new messages — advance last_ts to now to prevent repeated resets
+            self._storage.write_last_ts(self.cfg.chat_id, str(int(time.time() * 1000)))
 
         if not lines:
             logger.debug("[%s] 本轮无新消息", self.label)

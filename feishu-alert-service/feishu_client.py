@@ -291,9 +291,10 @@ class FeishuClient:
         if not text:
             return ""
 
-        sender_name = self._resolve_sender_name(sender_id)
         if sender_type in ("app", "bot"):
-            sender_name = f"{sender_name}[bot]"
+            sender_name = f"{sender_id}[bot]"
+        else:
+            sender_name = self._resolve_sender_name(sender_id)
 
         ts_str = ""
         if create_time:
