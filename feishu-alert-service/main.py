@@ -16,6 +16,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
+# Ensure sibling modules are importable regardless of working directory
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import yaml
 
 from feishu_client import FeishuClient
@@ -198,6 +201,9 @@ def main() -> None:
 
     # --- Storage ---
     data_dir = Path(cfg.get("data_dir", "./data"))
+    if not data_dir.is_absolute():
+        # Resolve relative to config file location
+        data_dir = Path(config_path).resolve().parent / data_dir
     try:
         storage = Storage(data_dir)
     except OSError:

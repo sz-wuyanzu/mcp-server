@@ -15,6 +15,9 @@ import sys
 from pathlib import Path
 from typing import Dict
 
+# Ensure sibling modules are importable regardless of working directory
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import yaml
 from mcp.server.fastmcp import FastMCP
 
