@@ -1,6 +1,6 @@
 # Feishu Alert Service
 
-飞书告警摘要服务，作为 MCP 插件运行在 Hermes Agent 容器内。
+飞书告警摘要服务，运行在 Hermes Agent 容器内。
 
 ## 功能
 
@@ -16,16 +16,20 @@
 ## 文件说明
 
 ```
-mcp_server.py      ← 入口：MCP 工具 + 告警摘要引擎（后台线程）
-feishu_client.py   ← 飞书 API（拉消息、发消息、@all）
-llm_client.py      ← LLM 调用（带重试）
-digest_engine.py   ← 分段摘要 + 归总报告逻辑
-hermes_config.py   ← 从 Hermes 读取飞书凭证和 LLM 配置
-main.py            ← 独立运行入口（非 Docker 场景备用）
-config.yaml        ← 配置文件（群列表、提示词、参数）
+feishu-alert-service/
+├── main.py            ← 告警摘要引擎入口（由 mcp-server.sh 启动）
+├── mcp_server.py      ← MCP 工具入口（由 Hermes MCP 配置启动）
+├── feishu_client.py   ← 飞书 API（拉消息、发消息、@all）
+├── llm_client.py      ← LLM 调用（带重试）
+├── digest_engine.py   ← 分段摘要 + 归总报告逻辑
+├── hermes_config.py   ← 从 Hermes 读取飞书凭证和 LLM 配置
+├── config.yaml        ← 配置文件（群列表、提示词、参数）
+└── README.md
+
+mcp-server.sh          ← 服务管理脚本（启动/停止/重启/状态）
 ```
 
-## 部署步骤（Hermes Docker 环境）
+## 部署步骤
 
 ### 1. 拉取代码
 
@@ -35,20 +39,23 @@ config.yaml        ← 配置文件（群列表、提示词、参数）
 git clone https://github.com/sz-wuyanzu/mcp-server.git
 ```
 
-容器内路径为 `/opt/data/mcp-server/feishu-alert-service/`
+容器内路径为 `/opt/data/mcp-server/`
 
 ### 2. 编辑 config.yaml
 
-编辑 `/opt/data/mcp-server/feishu-alert-service/config.yaml`，
-把 `chats` 里的 `chat_id` 换成真实的群 ID。
+```bash
+vi /opt/data/mcp-server/feishu-alert-service/config.yaml
+```
 
-其他可调整项：
+必须修改：`chats` 里的 `chat_id` 换成真实的群 ID。
+
+可选调整：
 - `segment_interval` / `report_interval` — 摘要和报告频率
 - `mention_all` — 报告是否 @所有人
 - `segment_prompt` / `report_prompt` — LLM 提示词
-- `model` — 可选，用更便宜的模型跑摘要
+- `model` — 用更便宜的模型跑摘要
 
-### 3. 配置 MCP Server
+### 3. 配置 MCP 工具（可选，让 Hermes 能查群历史）
 
 编辑 Hermes 配置文件 `/opt/data/config.yaml`，末尾加上：
 
@@ -61,31 +68,50 @@ mcp_servers:
       - "/opt/data/mcp-server/feishu-alert-service/config.yaml"
 ```
 
-### 4. 重启 Hermes
+这一步是可选的。不配的话告警摘要照常运行，只是 @ 机器人时无法查群历史。
 
-重启容器即可，不需要修改 docker-compose.yaml。
-首次启动时会自动安装缺失的 Python 依赖。
+### 4. 启动服务
+
+进入容器：
+
+```bash
+docker exec -it hermes bash
+```
+
+启动：
+
+```bash
+cd /opt/data/mcp-server
+./mcp-server.sh start
+```
+
+其他命令：
+
+```bash
+./mcp-server.sh status                       # 查看状态
+./mcp-server.sh stop                         # 停止所有
+./mcp-server.sh restart                      # 重启所有
+./mcp-server.sh start feishu-alert-service   # 启动单个服务
+```
 
 ### 5. 验证
 
-- 在飞书群 @ 机器人问"帮我查一下这个群最近的消息"，调用了 `feishu_group_history` 工具就说明 MCP 对接成功
-- 查看日志：`docker logs hermes 2>&1 | grep feishu-alert`
-- 查看摘要数据：容器内 `/opt/data/mcp-server/feishu-alert-service/data/`
-- 查看服务日志：容器内 `/opt/data/mcp-server/feishu-alert-service/logs/service.log`
+- 查看日志：`cat /opt/data/mcp-server/feishu-alert-service/logs/service.log`
+- 查看摘要数据：`ls /opt/data/mcp-server/feishu-alert-service/data/`
+- 查看进程状态：`./mcp-server.sh status`
+- 等待 report_interval 时间后，飞书群里会收到归总报告
 
-## 工作原理
+## 注意事项
 
-Hermes 通过 MCP 配置启动 `mcp_server.py`，这个进程同时做两件事：
-- MCP 工具：通过 stdio 响应 Hermes 的查群历史请求
-- 告警摘要：后台线程定时拉消息 → LLM 摘要 → 发报告到群
+- Hermes 容器重启后需要重新执行 `./mcp-server.sh start`
+- 修改 config.yaml 后执行 `./mcp-server.sh restart` 生效
+- 日志文件自动轮转，单文件最大 10MB，保留 3 个备份
+- 首次启动时会自动安装缺失的 Python 依赖
 
-一个进程，一个配置入口，不需要额外的容器或 compose 改动。
-
-## 更新
+## 更新代码
 
 ```bash
 cd /opt/data/mcp-server
 git pull
+./mcp-server.sh restart
 ```
-
-然后重启 Hermes 容器生效。

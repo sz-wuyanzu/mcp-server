@@ -18,6 +18,13 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYTHON="${HERMES_PYTHON:-/opt/hermes/.venv/bin/python}"
 
+# 检查 Python 是否可用
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+    echo "错误: Python 不存在: $PYTHON" >&2
+    echo "请设置 HERMES_PYTHON 环境变量指向正确的 Python 路径" >&2
+    exit 1
+fi
+
 # 发现所有服务（包含 main.py 的子目录）
 _discover_services() {
     for dir in "$SCRIPT_DIR"/*/; do
@@ -82,11 +89,39 @@ _status_one() {
     pf="$(_pid_file "$svc")"
 
     if _is_running "$svc"; then
-        echo "[$svc] 运行中 (PID: $(cat "$pf"))"
+        echo "[$svc] ● 运行中 (PID: $(cat "$pf"))"
     else
-        echo "[$svc] 未运行"
+        echo "[$svc] ○ 未运行"
         rm -f "$pf"
     fi
+}
+
+_list() {
+    services="$(_discover_services)"
+    if [ -z "$services" ]; then
+        echo "未发现任何服务"
+        return
+    fi
+    echo "已发现 $(echo "$services" | wc -w) 个服务:"
+    echo ""
+    for svc in $services; do
+        svc_dir="$SCRIPT_DIR/$svc"
+        # 读取 config.yaml 中的 name 信息（简单提取）
+        desc=""
+        if [ -f "$svc_dir/config.yaml" ]; then
+            desc=$(grep '^\s*-\?\s*name:' "$svc_dir/config.yaml" 2>/dev/null | sed 's/.*name:\s*["]*\([^"]*\).*/\1/' | tr '\n' ',' | sed 's/,$//')
+        fi
+        if _is_running "$svc"; then
+            status="● 运行中 (PID: $(cat "$(_pid_file "$svc")"))"
+        else
+            status="○ 未运行"
+        fi
+        if [ -n "$desc" ]; then
+            echo "  $svc  [$desc]  $status"
+        else
+            echo "  $svc  $status"
+        fi
+    done
 }
 
 # 主逻辑
@@ -106,11 +141,13 @@ case "$ACTION" in
     status)
         for svc in $(_get_services "$TARGET"); do _status_one "$svc"; done
         ;;
+    list)
+        _list
+        ;;
     *)
-        echo "用法: $0 {start|stop|restart|status} [服务名]"
+        echo "用法: $0 {start|stop|restart|status|list} [服务名]"
         echo ""
-        echo "可用服务:"
-        for svc in $(_discover_services); do echo "  - $svc"; done
+        _list
         exit 1
         ;;
 esac
