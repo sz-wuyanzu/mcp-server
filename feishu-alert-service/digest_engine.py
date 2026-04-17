@@ -55,7 +55,7 @@ class MessageFetcher(Protocol):
         self, chat_id: str, since_ts: Optional[str] = None, max_chars: int = 30000,
     ) -> tuple[list[str], Optional[str]]: ...
 
-    def send_message(self, chat_id: str, text: str) -> bool: ...
+    def send_message(self, chat_id: str, text: str, mention_all: bool = False) -> bool: ...
 
 
 class Summarizer(Protocol):
@@ -73,6 +73,7 @@ class ChatConfig:
     chat_id: str
     name: str = ""
     enabled: bool = True
+    mention_all: bool = False    # 归总报告是否 @所有人
     segment_interval: int = 10   # minutes
     report_interval: int = 240   # minutes
     max_chars_per_fetch: int = 30000
@@ -299,9 +300,9 @@ class ChatWorker:
             period = f"过去 {minutes} 分钟"
         header = f"📊 告警汇总报告 — {self.label}（{period}）\n\n"
 
-        sent = self._feishu.send_message(self.cfg.chat_id, header + report)
+        sent = self._feishu.send_message(self.cfg.chat_id, header + report, mention_all=self.cfg.mention_all)
         if sent:
-            logger.info("[%s] 归总报告已发送", self.label)
+            logger.info("[%s] 归总报告已发送 (mention_all=%s)", self.label, self.cfg.mention_all)
             self._storage.clear_digest(self.cfg.chat_id)
         else:
             logger.warning("[%s] 归总报告发送失败, 保留摘要待下次重试", self.label)

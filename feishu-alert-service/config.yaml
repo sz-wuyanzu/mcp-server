@@ -47,6 +47,8 @@ defaults:
 # chat_id: 在飞书群设置 → 群信息 → 群号 中获取
 # name:    给群起个名字，会显示在日志和报告标题中
 # enabled: 是否启用（默认 true），设为 false 可临时关闭该群的摘要
+# mention_all: 归总报告发送时是否 @所有人（默认 false）
+#              开启后群里每个人都会收到通知提醒
 #
 # segment_interval / report_interval 可以按群单独设置，
 # 不填则使用上面 defaults 中的值。
@@ -65,6 +67,7 @@ chats:
   - chat_id: "oc_cdabcd41e3fcb93511d6cefd446a7bae"
     name: "生产-CGM日志告警群"
     enabled: true
+    mention_all: true
     segment_interval: 1
     report_interval: 5
 

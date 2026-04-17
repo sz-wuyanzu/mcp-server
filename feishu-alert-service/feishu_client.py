@@ -208,8 +208,18 @@ class FeishuClient:
     # Message sending
     # ------------------------------------------------------------------
 
-    def send_message(self, chat_id: str, text: str) -> bool:
-        """Send a text message to *chat_id*. Returns True on success."""
+    def send_message(self, chat_id: str, text: str, mention_all: bool = False) -> bool:
+        """Send a message to *chat_id*. Returns True on success.
+
+        If mention_all=True, sends as rich-text post with @all tag.
+        *text* format: first line is used as title, rest as body.
+        """
+        if mention_all:
+            return self._send_post_with_at_all(chat_id, text)
+        return self._send_text(chat_id, text)
+
+    def _send_text(self, chat_id: str, text: str) -> bool:
+        """Send a plain text message."""
         payload = json.dumps({"text": text}, ensure_ascii=False)
         body = (
             CreateMessageRequestBody.builder()
@@ -229,6 +239,65 @@ class FeishuClient:
             if response and response.success():
                 msg_id = getattr(getattr(response, "data", None), "message_id", "?")
                 logger.info("消息发送成功: chat_id=%s, message_id=%s", chat_id, msg_id)
+                return True
+            code = getattr(response, "code", "?")
+            msg = getattr(response, "msg", "?")
+            logger.warning("消息发送失败: chat_id=%s, code=%s, msg=%s", chat_id, code, msg)
+            return False
+        except Exception:
+            logger.error("消息发送异常: chat_id=%s", chat_id, exc_info=True)
+            return False
+
+    def _send_post_with_at_all(self, chat_id: str, text: str) -> bool:
+        """Send a rich-text post message with real @all mention.
+
+        First line of *text* becomes the post title; remaining lines become body.
+        """
+        lines = text.split("\n")
+        # Extract title from first non-empty line
+        title = ""
+        body_lines = lines
+        for i, line in enumerate(lines):
+            if line.strip():
+                title = line.strip()
+                body_lines = lines[i + 1:]
+                break
+
+        # Build post paragraphs from body
+        paragraphs: list = []
+        for line in body_lines:
+            stripped = line.strip()
+            if stripped:
+                paragraphs.append([{"tag": "text", "text": stripped + "\n"}])
+
+        # Append @all as the last paragraph
+        paragraphs.append([{"tag": "at", "user_id": "all", "user_name": "所有人"}])
+
+        post_content = {
+            "zh_cn": {
+                "title": title,
+                "content": paragraphs,
+            }
+        }
+        payload = json.dumps(post_content, ensure_ascii=False)
+        body = (
+            CreateMessageRequestBody.builder()
+            .receive_id(chat_id)
+            .msg_type("post")
+            .content(payload)
+            .build()
+        )
+        request = (
+            CreateMessageRequest.builder()
+            .receive_id_type("chat_id")
+            .request_body(body)
+            .build()
+        )
+        try:
+            response = self._client.im.v1.message.create(request)
+            if response and response.success():
+                msg_id = getattr(getattr(response, "data", None), "message_id", "?")
+                logger.info("消息发送成功 (含@所有人): chat_id=%s, message_id=%s", chat_id, msg_id)
                 return True
             code = getattr(response, "code", "?")
             msg = getattr(response, "msg", "?")
