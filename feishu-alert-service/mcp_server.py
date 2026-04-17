@@ -97,6 +97,8 @@ def _setup_logging() -> None:
         log_dir = None
 
     root = logging.getLogger()
+    if root.handlers:
+        return  # Already configured
     root.setLevel(logging.INFO)
 
     # Handler 1: stderr (shows in docker logs)

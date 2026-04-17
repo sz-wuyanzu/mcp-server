@@ -43,6 +43,8 @@ def _setup_logging() -> None:
         log_dir = None
 
     root = logging.getLogger()
+    if root.handlers:
+        return  # Already configured (e.g. imported by mcp_server.py)
     root.setLevel(logging.INFO)
 
     console = logging.StreamHandler(sys.stderr)
