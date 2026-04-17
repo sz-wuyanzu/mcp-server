@@ -27,7 +27,7 @@ data_dir: "./data"
 # ---- 全局默认参数（每个群可单独覆盖） ----
 defaults:
   segment_interval: 10       # 每隔多少分钟做一次分段摘要
-  report_interval: 240       # 每隔多少分钟发一次归总报告到群里（240 = 4小时）
+  report_cycle: 6            # 每 N 次分段摘要后发一次归总报告（归总间隔 = segment_interval × report_cycle）
   max_chars_per_fetch: 30000 # 单次拉取消息的字符上限，防止输入过长
 
 # ---- 自定义提示词（直接在这里调整即可，不需要改代码） ----
@@ -87,16 +87,17 @@ report_prompt: |
 # mention_all: 归总报告发送时是否 @所有人（默认 false）
 #              开启后群里每个人都会收到通知提醒
 #
-# segment_interval / report_interval 可以按群单独设置，
+# segment_interval / report_cycle 可以按群单独设置，
 # 不填则使用上面 defaults 中的值。
 #
 # segment_interval: 每隔多少分钟拉一次群消息并用 LLM 生成分段摘要，
 #                   摘要会追加到本地文件中积累。值越小，摘要越及时，
 #                   但 LLM 调用越频繁。建议 5~30 分钟。
 #
-# report_interval:  每隔多少分钟把积累的所有分段摘要归总为一份完整报告，
+# report_cycle:     每 N 次分段摘要后，把积累的所有摘要归总为一份完整报告，
 #                   自动发送到飞书群里，发送后清空已积累的摘要。
-#                   比如设为 240 就是每 4 小时发一次告警汇总。
+#                   归总间隔 = segment_interval × report_cycle
+#                   例如 segment_interval=10, report_cycle=6 → 每 60 分钟发一次报告
 #
 # 以上参数修改后需要重启服务生效。
 # ============================================================
@@ -106,9 +107,9 @@ chats:
     enabled: true
     mention_all: false
     segment_interval: 1
-    report_interval: 5
+    report_cycle: 5
 
   # - chat_id: "oc_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
   #   name: "基础设施告警群"
   #   segment_interval: 30
-  #   report_interval: 480
+  #   report_cycle: 8

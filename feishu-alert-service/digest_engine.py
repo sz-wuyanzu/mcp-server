@@ -59,10 +59,16 @@ class ChatConfig:
     chat_id: str
     name: str = ""
     enabled: bool = True
-    mention_all: bool = False    # 归总报告是否 @所有人
-    segment_interval: int = 10   # minutes
-    report_interval: int = 240   # minutes
+    mention_all: bool = False
+    segment_interval: int = 10   # minutes — 每隔多少分钟做一次分段摘要
+    report_cycle: int = 6        # 每 N 次分段摘要后发一次归总报告（归总间隔 = segment_interval * report_cycle）
     max_chars_per_fetch: int = 30000
+
+    def __post_init__(self) -> None:
+        if self.segment_interval < 1:
+            object.__setattr__(self, "segment_interval", 1)
+        if self.report_cycle < 1:
+            object.__setattr__(self, "report_cycle", 1)
 
 
 class Storage:
@@ -158,8 +164,7 @@ class ChatWorker:
         self._segment_prompt = segment_prompt
         self._report_prompt = report_prompt
         self._last_segment_time: float = 0.0
-        self._last_report_time: float = 0.0
-        self._report_timer_started = False
+        self._segment_count: int = 0
 
     @property
     def label(self) -> str:
@@ -169,6 +174,11 @@ class ChatWorker:
     def enabled(self) -> bool:
         return self.cfg.enabled
 
+    @property
+    def report_interval_minutes(self) -> int:
+        """Actual report interval in minutes (for display)."""
+        return self.cfg.segment_interval * self.cfg.report_cycle
+
     def tick(self) -> None:
         """Called every engine tick. Skipped if disabled."""
         if not self.cfg.enabled:
@@ -177,30 +187,25 @@ class ChatWorker:
 
         # --- Segment ---
         segment_due = (now - self._last_segment_time) >= self.cfg.segment_interval * 60
-        if segment_due:
-            try:
-                self._process_segment()
-            except Exception:
-                logger.error("[%s] 分段摘要异常", self.label, exc_info=True)
-            self._last_segment_time = time.time()
-
-        # --- Report ---
-        if not self._report_timer_started:
-            self._last_report_time = now
-            self._report_timer_started = True
-            logger.info(
-                "[%s] 报告计时器启动, 首次报告将在 %d 分钟后生成",
-                self.label, self.cfg.report_interval,
-            )
+        if not segment_due:
             return
 
-        report_due = (now - self._last_report_time) >= self.cfg.report_interval * 60
-        if report_due:
+        try:
+            self._process_segment()
+        except Exception:
+            logger.error("[%s] 分段摘要异常", self.label, exc_info=True)
+        self._last_segment_time = time.time()
+        self._segment_count += 1
+
+        # --- Report (every N segments) ---
+        if self._segment_count >= self.cfg.report_cycle:
             try:
-                self._send_report()
+                sent = self._send_report()
+                if sent:
+                    self._segment_count = 0  # Reset only on success
+                # On failure, keep counting — will retry next segment
             except Exception:
                 logger.error("[%s] 归总报告异常", self.label, exc_info=True)
-            self._last_report_time = time.time()
 
     # ---- Segment logic ----
 
@@ -253,11 +258,12 @@ class ChatWorker:
 
     # ---- Report logic ----
 
-    def _send_report(self) -> None:
+    def _send_report(self) -> bool:
+        """Generate and send the aggregated report. Returns True on success."""
         digest_text = self._storage.read_digest(self.cfg.chat_id)
         if not digest_text:
             logger.debug("[%s] 无摘要数据, 跳过报告", self.label)
-            return
+            return True  # Nothing to report is not a failure
 
         # Hard truncate to avoid LLM proxy 504
         original_len = len(digest_text)
@@ -270,14 +276,14 @@ class ChatWorker:
 
         if not report:
             logger.warning("[%s] 归总 LLM 返回空, 保留摘要待下次重试", self.label)
-            return  # Do NOT clear digest — retry next cycle
+            return False  # Will retry next cycle
 
         if report.strip() in ("无告警", "本周期内无告警"):
             self._storage.clear_digest(self.cfg.chat_id)
             logger.info("[%s] 本周期无告警, 已清空摘要", self.label)
-            return
+            return True
 
-        minutes = self.cfg.report_interval
+        minutes = self.report_interval_minutes
         if minutes >= 120:
             period = f"过去 {minutes // 60} 小时"
         elif minutes >= 60:
@@ -290,9 +296,10 @@ class ChatWorker:
         if sent:
             logger.info("[%s] 归总报告已发送 (mention_all=%s)", self.label, self.cfg.mention_all)
             self._storage.clear_digest(self.cfg.chat_id)
+            return True
         else:
             logger.warning("[%s] 归总报告发送失败, 保留摘要待下次重试", self.label)
-            # Do NOT clear digest — retry next cycle
+            return False
 
 
 # ---------------------------------------------------------------------------
@@ -316,8 +323,9 @@ class DigestEngine:
         for w in self._workers:
             status = "启用" if w.enabled else "禁用"
             logger.info(
-                "  - [%s] segment=%dmin, report=%dmin, %s",
-                w.label, w.cfg.segment_interval, w.cfg.report_interval, status,
+                "  - [%s] segment=%dmin, report_cycle=%d (每%dmin), %s",
+                w.label, w.cfg.segment_interval, w.cfg.report_cycle,
+                w.report_interval_minutes, status,
             )
 
         while True:

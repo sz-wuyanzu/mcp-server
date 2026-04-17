@@ -84,29 +84,21 @@ _stop_one() {
     rm -f "$pf"
 }
 
-_status_one() {
-    svc="$1"
-    pf="$(_pid_file "$svc")"
-
-    if _is_running "$svc"; then
-        echo "[$svc] ● 运行中 (PID: $(cat "$pf"))"
-    else
-        echo "[$svc] ○ 未运行"
-        rm -f "$pf"
-    fi
-}
-
-_list() {
+_status() {
     services="$(_discover_services)"
     if [ -z "$services" ]; then
         echo "未发现任何服务"
         return
     fi
-    echo "已发现 $(echo "$services" | wc -w) 个服务:"
+    count=$(echo "$services" | wc -w)
+    running=0
+    for svc in $services; do
+        if _is_running "$svc"; then running=$((running + 1)); fi
+    done
+    echo "共 $count 个服务 ($running 个运行中):"
     echo ""
     for svc in $services; do
         svc_dir="$SCRIPT_DIR/$svc"
-        # 读取 config.yaml 中的 name 信息（简单提取）
         desc=""
         if [ -f "$svc_dir/config.yaml" ]; then
             desc=$(grep '^\s*-\?\s*name:' "$svc_dir/config.yaml" 2>/dev/null | sed 's/.*name:\s*["]*\([^"]*\).*/\1/' | tr '\n' ',' | sed 's/,$//')
@@ -115,6 +107,7 @@ _list() {
             status="● 运行中 (PID: $(cat "$(_pid_file "$svc")"))"
         else
             status="○ 未运行"
+            rm -f "$(_pid_file "$svc")"
         fi
         if [ -n "$desc" ]; then
             echo "  $svc  [$desc]  $status"
@@ -139,15 +132,12 @@ case "$ACTION" in
         for svc in $(_get_services "$TARGET"); do _stop_one "$svc"; sleep 1; _start_one "$svc"; done
         ;;
     status)
-        for svc in $(_get_services "$TARGET"); do _status_one "$svc"; done
-        ;;
-    list)
-        _list
+        _status
         ;;
     *)
-        echo "用法: $0 {start|stop|restart|status|list} [服务名]"
+        echo "用法: $0 {start|stop|restart|status} [服务名]"
         echo ""
-        _list
+        _status
         exit 1
         ;;
 esac

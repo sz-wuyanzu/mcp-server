@@ -169,7 +169,7 @@ def build_workers(
             enabled=bool(entry.get("enabled", defaults.get("enabled", True))),
             mention_all=bool(entry.get("mention_all", defaults.get("mention_all", False))),
             segment_interval=_int("segment_interval", 10),
-            report_interval=_int("report_interval", 240),
+            report_cycle=_int("report_cycle", 6),
             max_chars_per_fetch=_int("max_chars_per_fetch", 30000),
         )
         workers.append(ChatWorker(
