@@ -25,9 +25,10 @@ git clone https://github.com/sz-wuyanzu/mcp-server.git
 vi /data/hermes/data/mcp-server/feishu-alert-service/config.yaml
 ```
 
-必须修改两处：
-- `hermes_home: "/opt/data"` — 取消注释并设为容器内路径
+必须修改：
 - `chats` 里的 `chat_id` — 换成真实的群 ID
+
+`hermes_home` 不需要设置，容器内已有 `HERMES_HOME=/opt/data` 环境变量，代码会自动读取。
 
 ### 3. 进 Hermes 容器安装依赖
 
