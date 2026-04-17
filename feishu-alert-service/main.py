@@ -25,7 +25,6 @@ from feishu_client import FeishuClient
 from llm_client import LLMClient
 from hermes_config import HermesConfigError, load_feishu_credentials, load_llm_config
 from digest_engine import ChatConfig, ChatWorker, DigestEngine, Storage
-from digest_engine import SEGMENT_PROMPT, REPORT_PROMPT
 
 # ---------------------------------------------------------------------------
 # Logging: stdout + file
@@ -143,8 +142,11 @@ def build_workers(
     if not isinstance(defaults, dict):
         defaults = {}
 
-    segment_prompt = (cfg.get("segment_prompt") or "").strip() or SEGMENT_PROMPT
-    report_prompt = (cfg.get("report_prompt") or "").strip() or REPORT_PROMPT
+    segment_prompt = (cfg.get("segment_prompt") or "").strip()
+    report_prompt = (cfg.get("report_prompt") or "").strip()
+    if not segment_prompt or not report_prompt:
+        logger.error("配置错误: segment_prompt 和 report_prompt 不能为空，请在 config.yaml 中配置提示词。")
+        sys.exit(1)
 
     workers: list[ChatWorker] = []
     for idx, entry in enumerate(cfg["chats"]):
