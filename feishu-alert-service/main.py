@@ -124,12 +124,12 @@ def build_workers(
         chat_id = str(entry["chat_id"]).strip()
         name = str(entry.get("name", "")).strip()
 
-        def _int(key: str, fallback: int) -> int:
-            val = entry.get(key, defaults.get(key, fallback))
+        def _int(key: str, fallback: int, _entry=entry, _defaults=defaults, _idx=idx) -> int:
+            val = _entry.get(key, _defaults.get(key, fallback))
             try:
                 return max(1, int(val))
             except (ValueError, TypeError):
-                logger.warning("chats[%d].%s 值无效 (%s), 使用默认值 %d", idx, key, val, fallback)
+                logger.warning("chats[%d].%s 值无效 (%s), 使用默认值 %d", _idx, key, val, fallback)
                 return fallback
 
         chat_config = ChatConfig(

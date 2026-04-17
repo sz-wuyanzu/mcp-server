@@ -25,24 +25,10 @@ git clone https://github.com/sz-wuyanzu/mcp-server.git
 vi /data/hermes/data/mcp-server/feishu-alert-service/config.yaml
 ```
 
-必须修改：
-- `chats` 里的 `chat_id` — 换成真实的群 ID
+把 `chats` 里的 `chat_id` 换成真实的群 ID。
+`hermes_home` 不需要设置，容器内已有 `HERMES_HOME=/opt/data` 环境变量。
 
-`hermes_home` 不需要设置，容器内已有 `HERMES_HOME=/opt/data` 环境变量，代码会自动读取。
-
-### 3. 进 Hermes 容器安装依赖
-
-```bash
-# 优先用 Hermes 自带的 venv
-docker exec -it hermes /opt/hermes/.venv/bin/pip install \
-  -r /opt/data/mcp-server/feishu-alert-service/requirements.txt
-
-# 如果上面报错，试系统 pip
-docker exec -it hermes pip install \
-  -r /opt/data/mcp-server/feishu-alert-service/requirements.txt
-```
-
-### 4. 配置 MCP Server
+### 3. 配置 MCP Server
 
 编辑 Hermes 配置文件：
 
@@ -63,54 +49,31 @@ mcp_servers:
 
 > 如果 `python3` 找不到依赖，改成 `/opt/hermes/.venv/bin/python`
 
-### 5. 修改 Hermes 的 docker-compose.yaml
-
-```bash
-vi /data/hermes/docker-compose.yaml
-```
-
-在 command 里加一行启动告警摘要引擎：
-
-```yaml
-command: >
-  /bin/sh -c "
-    chown -R 10000:10000 /opt/data &&
-    su -s /bin/sh hermes -c '
-      /opt/hermes/.venv/bin/hermes gateway &
-      /opt/hermes/.venv/bin/hermes dashboard --host 0.0.0.0 &
-      python3 /opt/data/mcp-server/feishu-alert-service/main.py /opt/data/mcp-server/feishu-alert-service/config.yaml &
-      wait
-    '
-  "
-```
-
-### 6. 重启 Hermes
+### 4. 重启 Hermes
 
 ```bash
 cd /data/hermes
-docker compose down
-docker compose up -d
+docker compose restart
 ```
 
-### 7. 验证
+不需要修改 docker-compose.yaml。
+Hermes 启动后会自动通过 MCP 配置启动 mcp_server.py，
+告警摘要引擎作为后台线程同时运行。
+
+### 5. 验证
 
 ```bash
-# 告警摘要进程是否在跑
-docker exec hermes ps aux | grep main.py
-
-# 查看日志
-docker logs hermes 2>&1 | grep -i "feishu-alert\|digest"
-
 # 在飞书群 @ 机器人问 "帮我查一下这个群最近的消息"
 # 调用了 feishu_group_history 工具就说明 MCP 对接成功
+
+# 查看摘要数据
+docker exec hermes ls /opt/data/mcp-server/feishu-alert-service/data/
 ```
 
-## 容器内进程一览
+## 工作原理
 
-```
-Hermes 容器
-├── hermes gateway          ← 飞书网关（接收 @ 消息）
-├── hermes dashboard        ← Web 管理面板
-├── main.py                 ← 告警摘要引擎（定时拉消息→LLM 摘要→发报告）
-└── mcp_server.py           ← MCP 工具（Hermes 按需启动，查群历史）
-```
+Hermes 通过 MCP 配置启动 `mcp_server.py`，这个进程同时做两件事：
+- **MCP 工具**：通过 stdio 响应 Hermes 的查群历史请求
+- **告警摘要**：后台线程定时拉消息 → LLM 摘要 → 发报告到群
+
+一个进程，一个配置入口，不需要额外的容器或 compose 改动。

@@ -108,8 +108,12 @@ class Storage:
         return None
 
     def write_last_ts(self, chat_id: str, ts: str) -> None:
+        target = self._path(chat_id, ".last_ts")
         try:
-            self._path(chat_id, ".last_ts").write_text(ts, encoding="utf-8")
+            # Atomic write: write to temp file then rename
+            tmp = target.with_suffix(".tmp")
+            tmp.write_text(ts, encoding="utf-8")
+            tmp.rename(target)
         except OSError as exc:
             logger.error("写入 last_ts 失败 [%s]: %s", chat_id, exc)
 
@@ -130,8 +134,11 @@ class Storage:
             logger.error("追加 digest 失败 [%s]: %s", chat_id, exc)
 
     def clear_digest(self, chat_id: str) -> None:
+        target = self._path(chat_id, ".md")
         try:
-            self._path(chat_id, ".md").write_text("", encoding="utf-8")
+            tmp = target.with_suffix(".tmp")
+            tmp.write_text("", encoding="utf-8")
+            tmp.rename(target)
         except OSError as exc:
             logger.error("清空 digest 失败 [%s]: %s", chat_id, exc)
 
@@ -281,7 +288,12 @@ class ChatWorker:
             return
 
         minutes = self.cfg.report_interval
-        period = f"过去 {minutes // 60} 小时" if minutes >= 60 else f"过去 {minutes} 分钟"
+        if minutes >= 120:
+            period = f"过去 {minutes // 60} 小时"
+        elif minutes >= 60:
+            period = f"过去 1 小时"
+        else:
+            period = f"过去 {minutes} 分钟"
         header = f"📊 告警汇总报告 — {self.label}（{period}）\n\n"
 
         sent = self._feishu.send_message(self.cfg.chat_id, header + report)

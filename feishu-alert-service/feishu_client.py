@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import lark_oapi as lark
+from lark_oapi.api.contact.v3 import GetUserRequest
 from lark_oapi.api.im.v1 import (
     CreateMessageRequest,
     CreateMessageRequestBody,
@@ -94,8 +95,6 @@ class FeishuClient:
             return self._sender_cache[sender_id]
 
         try:
-            from lark_oapi.api.contact.v3 import GetUserRequest
-
             request = (
                 GetUserRequest.builder()
                 .user_id(sender_id)
