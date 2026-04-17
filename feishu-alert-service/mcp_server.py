@@ -80,15 +80,45 @@ from digest_engine import (
     SEGMENT_PROMPT, REPORT_PROMPT,
 )
 
-# Logs go to stderr — stdout is reserved for MCP protocol
-LOG_FORMAT = "%(asctime)s %(levelname)-7s [%(name)s] %(message)s"
-logging.basicConfig(
-    level=logging.INFO,
-    format=LOG_FORMAT,
-    datefmt="%Y-%m-%d %H:%M:%S",
-    stream=sys.stderr,
-)
-logger = logging.getLogger("feishu-alert")
+# ---------------------------------------------------------------------------
+# Logging: stderr (container console) + file
+# stdout is reserved for MCP protocol, so all logs go to stderr + file
+# ---------------------------------------------------------------------------
+
+_LOG_PREFIX = "mcp-server/feishu-alert-service"
+_LOG_FORMAT = f"%(asctime)s %(levelname)-7s [{_LOG_PREFIX}] [%(name)s] %(message)s"
+_LOG_DATE_FMT = "%Y-%m-%d %H:%M:%S"
+
+def _setup_logging() -> None:
+    """Configure root logger to output to both stderr and a log file."""
+    log_dir = _SELF_DIR / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        log_dir = None
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    # Handler 1: stderr (shows in docker logs)
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
+    root.addHandler(stderr_handler)
+
+    # Handler 2: file (persistent)
+    if log_dir:
+        from logging.handlers import RotatingFileHandler
+        file_handler = RotatingFileHandler(
+            log_dir / "service.log",
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=3,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
+        root.addHandler(file_handler)
+
+_setup_logging()
+logger = logging.getLogger("main")
 
 # ---------------------------------------------------------------------------
 # Global state

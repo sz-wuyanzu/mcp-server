@@ -28,14 +28,41 @@ from digest_engine import ChatConfig, ChatWorker, DigestEngine, Storage
 from digest_engine import SEGMENT_PROMPT, REPORT_PROMPT
 
 # ---------------------------------------------------------------------------
-# Logging
+# Logging: stdout + file
 # ---------------------------------------------------------------------------
 
-LOG_FORMAT = "%(asctime)s %(levelname)-7s [%(name)s] %(message)s"
-LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+_LOG_PREFIX = "mcp-server/feishu-alert-service"
+_LOG_FORMAT = f"%(asctime)s %(levelname)-7s [{_LOG_PREFIX}] [%(name)s] %(message)s"
+_LOG_DATE_FMT = "%Y-%m-%d %H:%M:%S"
 
-logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
-logger = logging.getLogger("feishu-alert-service")
+def _setup_logging() -> None:
+    _self_dir = Path(__file__).resolve().parent
+    log_dir = _self_dir / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        log_dir = None
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    console = logging.StreamHandler(sys.stderr)
+    console.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
+    root.addHandler(console)
+
+    if log_dir:
+        from logging.handlers import RotatingFileHandler
+        fh = RotatingFileHandler(
+            log_dir / "service.log",
+            maxBytes=10 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",
+        )
+        fh.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FMT))
+        root.addHandler(fh)
+
+_setup_logging()
+logger = logging.getLogger("main")
 
 
 # ---------------------------------------------------------------------------
