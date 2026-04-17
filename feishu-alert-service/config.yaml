@@ -108,8 +108,10 @@ chats:
     mention_all: false
     segment_interval: 1
     report_cycle: 5
+    max_chars_per_fetch: 30000 # 单次拉取消息的字符上限，防止输入过长，优先级更高
 
   # - chat_id: "oc_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
   #   name: "基础设施告警群"
   #   segment_interval: 30
   #   report_cycle: 8
+  #   max_chars_per_fetch: 30000 # 单次拉取消息的字符上限，防止输入过长，优先级更高
