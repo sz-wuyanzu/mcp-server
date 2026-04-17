@@ -318,10 +318,14 @@ class FeishuClient:
 
         if msg_type == "post":
             parts: List[str] = []
+            # Format 1: localized — {"zh_cn": {"title": ..., "content": [...]}}
             for lang_key in ("zh_cn", "en_us", "ja_jp"):
                 locale = payload.get(lang_key)
                 if not locale:
                     continue
+                title = locale.get("title", "")
+                if title:
+                    parts.append(title)
                 for para in locale.get("content", []):
                     for elem in (para if isinstance(para, list) else [para]):
                         tag = elem.get("tag", "")
@@ -331,6 +335,18 @@ class FeishuClient:
                             parts.append(elem.get("text", elem.get("href", "")))
                 if parts:
                     break
+            # Format 2: flat — {"title": ..., "content": [...]} (webhook bots)
+            if not parts and "content" in payload:
+                title = payload.get("title", "")
+                if title:
+                    parts.append(title)
+                for para in payload.get("content", []):
+                    for elem in (para if isinstance(para, list) else [para]):
+                        tag = elem.get("tag", "")
+                        if tag == "text":
+                            parts.append(elem.get("text", ""))
+                        elif tag == "a":
+                            parts.append(elem.get("text", elem.get("href", "")))
             return " ".join(parts).strip()
 
         if msg_type == "interactive":
