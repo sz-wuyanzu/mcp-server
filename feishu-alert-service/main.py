@@ -247,16 +247,14 @@ def main() -> None:
     # --- Workers ---
     workers = build_workers(cfg, feishu, llm, storage)
 
-    # Verify all chat_ids are accessible (non-blocking)
+    # Verify all chat_ids and resolve display names
     logger.info("验证群配置...")
     for w in workers:
         try:
-            real_name = feishu.verify_chat(w.cfg.chat_id)
-            if not w.cfg.name:
-                logger.info("  群 %s 未设置 name，使用飞书群名: %s", w.cfg.chat_id, real_name)
-        except RuntimeError as exc:
+            w.refresh_display_name()
+            logger.info("  [%s] 群验证通过 (%s)", w.label, w.cfg.chat_id)
+        except Exception as exc:
             logger.warning("群验证失败 (不影响启动): %s", exc)
-            logger.warning("  [%s] 将在运行时重试，验证通过前不会拉取消息", w.label)
 
     logger.info("已配置 %d 个群: %s", len(workers), ", ".join(w.label for w in workers))
 

@@ -278,11 +278,11 @@ def _init_all(config_path: str) -> None:
             report_prompt=report_prompt,
         ))
 
-    # Verify chats (non-blocking)
+    # Verify chats and resolve display names
     for w in workers:
         try:
-            _feishu_client.verify_chat(w.cfg.chat_id)
-        except RuntimeError as exc:
+            w.refresh_display_name()
+        except Exception as exc:
             logger.warning("群验证失败 (不影响启动): %s", exc)
 
     logger.info("已配置 %d 个群: %s", len(workers), ", ".join(w.label for w in workers))

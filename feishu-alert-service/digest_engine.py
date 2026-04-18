@@ -44,6 +44,8 @@ class MessageFetcher(Protocol):
 
     def send_message(self, chat_id: str, text: str, mention_all: bool = False) -> bool: ...
 
+    def verify_chat(self, chat_id: str) -> str: ...
+
 
 class Summarizer(Protocol):
     """Anything that can summarize text."""
@@ -172,10 +174,23 @@ class ChatWorker:
         self._report_prompt = report_prompt
         self._last_segment_time: float = 0.0
         self._segment_count: int = 0
+        # Dynamic display name: config.name > fetched from API > chat_id
+        self._display_name: str = cfg.name or ""
 
     @property
     def label(self) -> str:
-        return self.cfg.name or self.cfg.chat_id
+        return self._display_name or self.cfg.chat_id
+
+    def refresh_display_name(self) -> None:
+        """Refresh display name from Feishu API (if not set in config)."""
+        if self.cfg.name:
+            return  # Config has explicit name, don't override
+        try:
+            name = self._feishu.verify_chat(self.cfg.chat_id)
+            if name and name != self.cfg.chat_id:
+                self._display_name = name
+        except Exception:
+            pass  # Keep existing name on failure
 
     @property
     def enabled(self) -> bool:
@@ -282,6 +297,9 @@ class ChatWorker:
         if original_len > 1500:
             digest_text = digest_text[-1500:]
             logger.info("[%s] 截断摘要: %d -> 1500 字符", self.label, original_len)
+
+        # Refresh display name before generating report
+        self.refresh_display_name()
 
         logger.info("[%s] 开始生成归总报告...", self.label)
 

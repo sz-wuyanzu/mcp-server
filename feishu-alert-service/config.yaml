@@ -83,7 +83,9 @@ report_prompt: |
 # 监控的飞书群列表（必填，至少一个）
 #
 # chat_id: 在飞书群设置 → 群信息 → 群号 中获取
-# name:    给群起个名字，会显示在日志和报告标题中
+# name:    群显示名称（可选）
+#          不填 → 自动从飞书获取群名，群名被修改后会自动同步
+#          填了 → 使用你填的名称，不查飞书 API
 # enabled: 是否启用（默认 true），设为 false 可临时关闭该群的摘要
 # mention_all: 归总报告发送时是否 @所有人（默认 false）
 #              开启后群里每个人都会收到通知提醒
@@ -105,7 +107,7 @@ report_prompt: |
 # ============================================================
 chats:
   - chat_id: "oc_cdabcd41e3fcb93511d6cefd446a7bae"
-    name: "生产-CGM日志告警群"
+    # name 留空，自动从飞书获取群名
     enabled: true
     mention_all: false
     segment_interval: 1

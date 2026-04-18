@@ -47,7 +47,7 @@ git clone https://github.com/sz-wuyanzu/mcp-server.git
 vi /opt/data/mcp-server/feishu-alert-service/config.yaml
 ```
 
-必须修改：`chats` 里的 `chat_id` 换成真实的群 ID。
+必须修改：`chats` 里的 `chat_id` 换成真实的群 ID。`name` 不用填，自动从飞书获取。
 
 可选调整：
 - `segment_interval` / `report_interval` — 摘要和报告频率
