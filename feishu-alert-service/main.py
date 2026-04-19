@@ -171,6 +171,7 @@ def build_workers(
             name=name,
             enabled=bool(entry.get("enabled", defaults.get("enabled", True))),
             mention_all=bool(entry.get("mention_all", defaults.get("mention_all", False))),
+            mention_users=tuple(entry.get("mention_users", defaults.get("mention_users", []))),
             segment_interval=_int("segment_interval", 10),
             report_cycle=_int("report_cycle", 6),
             max_chars_per_fetch=_int("max_chars_per_fetch", 30000),

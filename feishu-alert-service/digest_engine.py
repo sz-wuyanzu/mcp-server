@@ -42,7 +42,7 @@ class MessageFetcher(Protocol):
         self, chat_id: str, since_ts: Optional[str] = None, max_chars: int = 30000,
     ) -> tuple[list[str], Optional[str]]: ...
 
-    def send_message(self, chat_id: str, text: str, mention_all: bool = False) -> bool: ...
+    def send_message(self, chat_id: str, text: str, mention_all: bool = False, mention_users: tuple = ()) -> bool: ...
 
     def verify_chat(self, chat_id: str) -> str: ...
 
@@ -63,6 +63,7 @@ class ChatConfig:
     name: str = ""
     enabled: bool = True
     mention_all: bool = False
+    mention_users: tuple = ()       # open_id 列表，如 ("ou_xxx", "ou_yyy")
     segment_interval: int = 10   # minutes — 每隔多少分钟做一次分段摘要
     report_cycle: int = 6        # 每 N 次分段摘要后发一次归总报告（归总间隔 = segment_interval * report_cycle）
     max_chars_per_fetch: int = 30000
@@ -329,7 +330,11 @@ class ChatWorker:
             period = f"过去 {minutes} 分钟"
         header = f"📊 告警汇总报告 — {self.label}（{period}）\n\n"
 
-        sent = self._feishu.send_message(self.cfg.chat_id, header + report, mention_all=self.cfg.mention_all)
+        sent = self._feishu.send_message(
+            self.cfg.chat_id, header + report,
+            mention_all=self.cfg.mention_all,
+            mention_users=self.cfg.mention_users,
+        )
         if sent:
             logger.info("[%s] 归总报告已发送 (mention_all=%s)", self.label, self.cfg.mention_all)
             self._storage.clear_digest(self.cfg.chat_id)

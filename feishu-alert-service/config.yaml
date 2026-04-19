@@ -90,6 +90,9 @@ report_prompt: |
 # enabled: 是否启用（默认 true），设为 false 可临时关闭该群的摘要
 # mention_all: 归总报告发送时是否 @所有人（默认 false）
 #              开启后群里每个人都会收到通知提醒
+# mention_users: 归总报告发送时 @ 指定的人（默认空列表，不 @）
+#                填飞书 open_id（格式 ou_xxx），可填多个
+#                获取方式：飞书管理后台 → 通讯录 → 用户详情 → open_id
 #
 # segment_interval / report_cycle 可以按群单独设置，
 # 不填则使用上面 defaults 中的值。
@@ -111,6 +114,7 @@ chats:
     # name 留空，自动从飞书获取群名
     enabled: true
     mention_all: false
+    mention_users: []              # 不 @ 指定人。填 open_id 如: ["ou_xxx", "ou_yyy"]
     segment_interval: 1
     report_cycle: 5
     max_chars_per_fetch: 30000 # 单次拉取消息的字符上限，防止输入过长，优先级更高
