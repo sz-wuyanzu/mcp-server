@@ -36,14 +36,14 @@ segment_prompt: |
   请提取并总结其中的告警信息。
 
   输出要求：
-  - 按服务名分类，每个服务一行，格式：服务名 | 级别 | 次数 | 简要描述
+  - 按服务名分类，每个服务一行，格式：服务名 | 级别 | 次数 | URL | 简要描述
   - 忽略普通闲聊
   - 如果没有告警消息，只回复 无告警
-  - 不超过 1000 字
+  - 不遗漏关键信息，不超过 1000 字
   - 不要使用 markdown 语法（不要用 ** # ` 等符号）
 
 report_prompt: |
-  你是一个运维告警分析助手。以下是过去一段时间内多个时间段的告警摘要。
+  你是一个高级运维告警分析师。以下是过去一段时间内多个时间段的告警摘要。
   请将它们归总为一份完整的告警报告。
 
   输出格式要求（纯文本，不要使用 markdown 语法，不要用 ** # ` 等符号）：
@@ -52,12 +52,13 @@ report_prompt: |
      - emoji + 服务名 + 次数
      - 事件等级：告警日志中的级别（如 ERROR、WARN 等）
      - 问题：简述告警内容
-     - 原因分析：根据告警日志推断可能的原因
-     - 解决方案：给出具体可操作的排查或修复建议
-     - 超过 1499 字则分多条消息发送
+     - 关键字段：汇总 url 数据，如有敏感信息（如身份证、手机号、等等id字样要用***表示）
+     - 原因分析：根据告警日志推断 url 所实现的功能，表达该类告警产生的原因，以及可能引发的风险
+     - 解决方案：从高级java开发工程师兼高级全栈架构师的角度，分析并给出针对该类问题的具体可操作的排查步骤，和专业的修复建议方案
   3. 高频或严重问题用 🔴 标注，中等用 🟡，一般用 🟢
   4. 并在结尾处说明“如果对这条总结有疑问，可以回复这条消息，帮您深入分析这段告警事件！”之类的表达
   5. 如果所有摘要都是 无告警，只回复 本周期内无告
+  6. 超过 1499 字则分多条消息发送
 
   示例格式：
   共涉及 3 个服务，15 次告警
@@ -65,18 +66,21 @@ report_prompt: |
   🔴 cgm-open（9次）
   事件等级：ERROR
   问题：Kafka 消费失败，主键冲突 DuplicateKeyException
+  关键字段：/login/{手机号}/system
   原因分析：上游数据重复推送，或消费者重试导致重复写入
   解决方案：检查上游数据源是否重复发送；消费端增加幂等校验
 
   🟡 cgm-user（4次）
   事件等级：ERROR
   问题：Redis 分布式锁获取失败
+  关键字段：/login/{用户id}/system
   原因分析：并发请求过高或 Redis 连接池耗尽
   解决方案：检查 Redis 连接数和负载；优化锁粒度或增加重试间隔
 
   🟢 cgm-device（2次）
   事件等级：WARN
   问题：MQTT 连接状态异常，设备离线
+  关键字段：/login/{设备id}/system
   原因分析：设备网络不稳定或 MQTT broker 连接数达上限
   解决方案：检查设备网络环境；确认 broker 连接数配置
 
@@ -111,16 +115,25 @@ report_prompt: |
 # ============================================================
 chats:
   - chat_id: "oc_cdabcd41e3fcb93511d6cefd446a7bae"
-    # name 留空，自动从飞书获取群名
+    name: ""
     enabled: true
     mention_all: false
     mention_users: []              # 不 @ 指定人。填 open_id 如: ["ou_xxx", "ou_yyy"]
-    segment_interval: 1
-    report_cycle: 5
-    max_chars_per_fetch: 30000 # 单次拉取消息的字符上限，防止输入过长，优先级更高
+    segment_interval: 10
+    report_cycle: 6
+    max_chars_per_fetch: 50000 # 单次拉取消息的字符上限，防止输入过长，优先级更高
+
+  - chat_id: "oc_39e46890bc4ada08eb3a8d2c35a9d40d"
+    name: ""
+    enabled: true
+    mention_all: false
+    mention_users: []              # 不 @ 指定人。填 open_id 如: ["ou_xxx", "ou_yyy"]
+    segment_interval: 10
+    report_cycle: 6
+    max_chars_per_fetch: 50000 # 单次拉取消息的字符上限，防止输入过长，优先级更高
 
   # - chat_id: "oc_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
-  #   name: "基础设施告警群"
+  #   name: ""
   #   segment_interval: 30
   #   report_cycle: 8
   #   max_chars_per_fetch: 30000 # 单次拉取消息的字符上限，防止输入过长，优先级更高
