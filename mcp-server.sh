@@ -111,7 +111,9 @@ _status() {
         svc_dir="$SCRIPT_DIR/$svc"
         desc=""
         if [ -f "$svc_dir/config.yaml" ]; then
-            desc=$(grep '^\s*-\?\s*name:' "$svc_dir/config.yaml" 2>/dev/null | sed 's/.*name:\s*["]*\([^"]*\).*/\1/' | tr '\n' ',' | sed 's/,$//')
+            desc=$(grep '^\s*-\s*chat_id:' "$svc_dir/config.yaml" 2>/dev/null \
+                | sed 's/.*chat_id:\s*["]*\([^"]*\).*/\1/' \
+                | tr '\n' ',' | sed 's/,$//')
         fi
         if _is_running "$svc"; then
             status="● 运行中 (PID: $(cat "$(_pid_file "$svc")"))"

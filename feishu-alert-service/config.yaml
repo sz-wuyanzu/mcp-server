@@ -126,8 +126,8 @@ chats:
     enabled: true
     mention_all: false
     mention_users: []              # 不 @ 指定人。填 open_id 如: ["ou_xxx", "ou_yyy"]
-    segment_interval: 1
-    report_cycle: 3
+    segment_interval: 10
+    report_cycle: 24
     max_chars_per_fetch: 50000 # 单次拉取消息的字符上限，防止输入过长，优先级更高
   - chat_id: "oc_39e46890bc4ada08eb3a8d2c35a9d40d"
     name: ""
