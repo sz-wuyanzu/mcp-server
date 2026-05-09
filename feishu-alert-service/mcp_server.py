@@ -248,6 +248,20 @@ def _init_all(config_path: str) -> None:
         logger.error("配置错误: segment_prompt 和 report_prompt 不能为空，请在 config.yaml 中配置提示词。")
         sys.exit(1)
 
+    # Global notify config (optional): consolidate all reports to one chat
+    notify_chat_id = str(cfg.get("notify_chat_id", "")).strip()
+    notify_mention_all = bool(cfg.get("notify_mention_all", False))
+    notify_mention_users = tuple(cfg.get("notify_mention_users", []) or [])
+
+    # Verify notify_chat_id at startup (fail-fast if configured but invalid)
+    if notify_chat_id:
+        try:
+            notify_name = _feishu_client.verify_chat(notify_chat_id)
+            logger.info("汇总通知群就绪: %s (%s)", notify_name, notify_chat_id)
+        except Exception as exc:
+            logger.error("汇总通知群验证失败: %s", exc)
+            sys.exit(1)
+
     workers: List[ChatWorker] = []
     for idx, entry in enumerate(cfg["chats"]):
         chat_id = str(entry["chat_id"]).strip()
@@ -277,6 +291,9 @@ def _init_all(config_path: str) -> None:
             storage=storage,
             segment_prompt=segment_prompt,
             report_prompt=report_prompt,
+            notify_chat_id=notify_chat_id,
+            notify_mention_all=notify_mention_all,
+            notify_mention_users=notify_mention_users,
         ))
 
     # Verify chats and resolve display names

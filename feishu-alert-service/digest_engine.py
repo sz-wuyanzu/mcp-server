@@ -166,6 +166,9 @@ class ChatWorker:
         storage: Storage,
         segment_prompt: str = SEGMENT_PROMPT,
         report_prompt: str = REPORT_PROMPT,
+        notify_chat_id: str = "",
+        notify_mention_all: bool = False,
+        notify_mention_users: tuple = (),
     ) -> None:
         self.cfg = cfg
         self._feishu = feishu
@@ -173,6 +176,9 @@ class ChatWorker:
         self._storage = storage
         self._segment_prompt = segment_prompt
         self._report_prompt = report_prompt
+        self._notify_chat_id = notify_chat_id
+        self._notify_mention_all = notify_mention_all
+        self._notify_mention_users = notify_mention_users
         self._last_segment_time: float = 0.0
         self._segment_count: int = 0
         # Dynamic display name: config.name > fetched from API > chat_id
@@ -328,15 +334,31 @@ class ChatWorker:
             period = f"过去 1 小时"
         else:
             period = f"过去 {minutes} 分钟"
-        header = f"📊 告警汇总报告 — {self.label}（{period}）\n\n"
+
+        # Determine target: notify_chat_id (if set) or original chat_id
+        if self._notify_chat_id:
+            # Send to notify group only; include source chat name in header
+            target_chat_id = self._notify_chat_id
+            mention_all = self._notify_mention_all
+            mention_users = self._notify_mention_users
+            header = f"📊 告警汇总报告 — [{self.label}]（{period}）\n\n"
+        else:
+            # Send back to original chat
+            target_chat_id = self.cfg.chat_id
+            mention_all = self.cfg.mention_all
+            mention_users = self.cfg.mention_users
+            header = f"📊 告警汇总报告 — {self.label}（{period}）\n\n"
 
         sent = self._feishu.send_message(
-            self.cfg.chat_id, header + report,
-            mention_all=self.cfg.mention_all,
-            mention_users=self.cfg.mention_users,
+            target_chat_id, header + report,
+            mention_all=mention_all,
+            mention_users=mention_users,
         )
         if sent:
-            logger.info("[%s] 归总报告已发送 (mention_all=%s)", self.label, self.cfg.mention_all)
+            logger.info(
+                "[%s] 归总报告已发送到 %s (mention_all=%s)",
+                self.label, target_chat_id, mention_all,
+            )
             self._storage.clear_digest(self.cfg.chat_id)
             return True
         else:
