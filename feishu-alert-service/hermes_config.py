@@ -156,22 +156,30 @@ def load_llm_config(
     base_url = str(model_cfg.get("base_url", "")).strip()
     api_key = str(model_cfg.get("api_key", "")).strip()
 
-    # If a named provider is set, look up its base_url/api_key from custom_providers
+    # Hermes may identify custom providers as "custom:<name>" while the
+    # custom_providers entry itself uses just "<name>". Treat these forms as
+    # equivalent, while retaining support for exact matches.
     if provider_name:
+        provider_lookup_name = provider_name.removeprefix("custom:")
         matched = False
         for cp in hermes_cfg.get("custom_providers", []):
-            if isinstance(cp, dict) and str(cp.get("name", "")).strip() == provider_name:
-                cp_base_url = str(cp.get("base_url", "")).strip()
-                cp_api_key = str(cp.get("api_key", "")).strip()
-                if cp_base_url:
-                    base_url = cp_base_url
-                if cp_api_key:
-                    api_key = cp_api_key
-                if not model_name:
-                    model_name = str(cp.get("model", "")).strip()
-                logger.info("匹配 custom_provider '%s': base_url=%s", provider_name, base_url)
-                matched = True
-                break
+            if not isinstance(cp, dict):
+                continue
+            cp_name = str(cp.get("name", "")).strip()
+            if cp_name not in (provider_name, provider_lookup_name):
+                continue
+
+            cp_base_url = str(cp.get("base_url", "")).strip()
+            cp_api_key = str(cp.get("api_key", "")).strip()
+            if cp_base_url:
+                base_url = cp_base_url
+            if cp_api_key:
+                api_key = cp_api_key
+            if not model_name:
+                model_name = str(cp.get("model", "")).strip()
+            logger.info("匹配 custom_provider '%s': base_url=%s", cp_name, base_url)
+            matched = True
+            break
         if not matched:
             logger.warning("未找到 custom_provider '%s', 使用 model.base_url=%s", provider_name, base_url)
 
